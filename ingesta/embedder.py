@@ -138,16 +138,15 @@ def run_ingesta() -> int:
     )
 
     # 7. Verificar contra Qdrant directamente — no confiar en el contador de LlamaIndex
-    real_count = client.count(COLLECTION).count
+    count = client.count(COLLECTION, exact=True)
     log.info(
-        "Verificacion Qdrant: %d puntos reales en '%s' (LlamaIndex reporto %d documentos).",
-        real_count,
-        COLLECTION,
+        "Verificacion post-ingesta: %d puntos en Qdrant (LlamaIndex proceso %d documentos).",
+        count.count,
         len(docs),
     )
 
-    log.info("Ingesta completada: %d documentos indexados.", real_count)
-    return real_count
+    log.info("Ingesta completada: %d documentos indexados.", count.count)
+    return count.count
 
 
 if __name__ == "__main__":
