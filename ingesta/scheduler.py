@@ -6,11 +6,14 @@ Uso standalone: uv run python -m ingesta.scheduler
 (También es iniciado por el lifespan de FastAPI en app/main.py)
 """
 import logging
+import os
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
 
 from ingesta.embedder import run_ingesta
 
+load_dotenv()
 log = logging.getLogger(__name__)
 
 INTERVALO_MINUTOS = 3
@@ -26,10 +29,18 @@ def _job() -> None:
 
 def start_background_scheduler() -> BackgroundScheduler:
     """
-    Inicia el scheduler en background.
+    Inicia el scheduler en background si SCHEDULER_ENABLED=true (por defecto).
+    Con SCHEDULER_ENABLED=false devuelve un scheduler detenido sin registrar jobs,
+    lo que permite arrancar la API sin re-ingestas automáticas.
     Usar desde el lifespan de FastAPI.
     """
     scheduler = BackgroundScheduler()
+    enabled = os.getenv("SCHEDULER_ENABLED", "true").strip().lower() == "true"
+    if not enabled:
+        log.info("Scheduler DESHABILITADO (SCHEDULER_ENABLED=false). No se ejecutaran re-ingestas automaticas.")
+        scheduler.start()  # iniciado sin jobs para que .shutdown() sea seguro
+        return scheduler
+
     scheduler.add_job(
         _job,
         trigger="interval",

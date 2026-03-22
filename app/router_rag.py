@@ -8,6 +8,7 @@ Arquitectura:
 - Async obligatorio: usar aquery() desde FastAPI
 """
 import logging
+import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -30,6 +31,8 @@ log = logging.getLogger(__name__)
 
 LLM_MODEL = "gemini-2.5-flash-lite"
 EMBED_MODEL = "gemini-embedding-001"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_MODEL = "google/gemma-3-27b-it:free"
 
 # Descripciones semánticas para el selector — son el "prompt" de routing
 _TOOL_DESCRIPTIONS = {
@@ -64,8 +67,31 @@ _FALLBACK_DESCRIPTION = (
 )
 
 
-def _get_llm() -> GoogleGenAI:
+def get_llm() -> GoogleGenAI:
+    """Devuelve siempre Gemini como LLM primario."""
     return GoogleGenAI(model=LLM_MODEL, temperature=0)
+
+
+def _get_openrouter_llm():
+    """Instancia el LLM de OpenRouter para usar como fallback ante 429."""
+    from llama_index.llms.openai_like import OpenAILike
+    key = os.getenv("OPENROUTER_API_KEY", "")
+    if not key:
+        raise RuntimeError(
+            "429 de Gemini pero OPENROUTER_API_KEY no está definida — no hay fallback disponible."
+        )
+    return OpenAILike(
+        model=OPENROUTER_MODEL,
+        api_base=OPENROUTER_BASE_URL,
+        api_key=key,
+        temperature=0,
+        is_chat_model=True,
+    )
+
+
+def _get_llm() -> GoogleGenAI:
+    """Alias interno para compatibilidad con get_index()."""
+    return get_llm()
 
 
 def _get_embed_model() -> GoogleGenAIEmbedding:
@@ -108,13 +134,15 @@ def _make_fallback_engine(llm: GoogleGenAI):
     return FallbackEngine()
 
 
-def build_router(index: VectorStoreIndex) -> RouterQueryEngine:
+def build_router(index: VectorStoreIndex, llm=None) -> RouterQueryEngine:
     """
     Construye el RouterQueryEngine con las 4 herramientas + fallback.
     El selector PydanticSingleSelector devuelve el campo 'reason' obligatorio
     para trazabilidad.
+    Acepta un llm opcional para poder reconstruir el router con OpenRouter en el fallback.
     """
-    llm = _get_llm()
+    if llm is None:
+        llm = _get_llm()
 
     tools = [
         QueryEngineTool.from_defaults(
@@ -167,6 +195,43 @@ def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResu
         categoria=categoria,
         reason=selection.reason,
     )
+
+
+def query_with_fallback(
+    router: RouterQueryEngine,
+    index: VectorStoreIndex,
+    query_str: str,
+) -> RouterResult:
+    """
+    Ejecuta la query con Gemini; si se recibe un 429 (ResourceExhausted)
+    reconstruye el router con OpenRouter y reintenta automáticamente.
+
+    Usa tenacity para interceptar ResourceExhausted y cambiar el LLM antes
+    de reintentar, sin exponer la lógica de reintento al llamador.
+    """
+    from google.api_core.exceptions import ResourceExhausted
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_none
+
+    active_router = [router]  # lista mutable para mutar dentro del closure
+
+    def _activate_openrouter(retry_state) -> None:
+        log.warning(
+            "429 ResourceExhausted de Gemini — activando fallback OpenRouter (%s).",
+            OPENROUTER_MODEL,
+        )
+        active_router[0] = build_router(index, llm=_get_openrouter_llm())
+
+    @retry(
+        retry=retry_if_exception_type(ResourceExhausted),
+        stop=stop_after_attempt(2),
+        wait=wait_none(),
+        before_sleep=_activate_openrouter,
+        reraise=True,
+    )
+    def _attempt() -> RouterResult:
+        return query_with_metadata(active_router[0], query_str)
+
+    return _attempt()
 
 
 def get_index() -> VectorStoreIndex:

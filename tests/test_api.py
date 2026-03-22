@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from fastapi.testclient import TestClient
 
 from app.main import app, _state
-from app.router_rag import RouterResult
+from app.router_rag import RouterResult, query_with_fallback
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ class TestQuery:
     ])
     def test_routing_categoria(self, client, pregunta, categoria_esperada):
         resultado_mock = MOCK_RESULTS[categoria_esperada]
-        with patch("app.main.query_with_metadata", return_value=resultado_mock):
+        with patch("app.main.query_with_fallback", return_value=resultado_mock):
             resp = client.post("/query", json={"pregunta": pregunta})
         assert resp.status_code == 200
         data = resp.json()
@@ -126,14 +126,14 @@ class TestQuery:
         assert data["reason"]
 
     def test_query_incluye_reason(self, client):
-        with patch("app.main.query_with_metadata", return_value=MOCK_RESULTS["tuneles"]):
+        with patch("app.main.query_with_fallback", return_value=MOCK_RESULTS["tuneles"]):
             resp = client.post("/query", json={"pregunta": "¿Cómo está el túnel?"})
         assert resp.status_code == 200
         assert "reason" in resp.json()
         assert resp.json()["reason"] != ""
 
     def test_fallback_fuera_de_dominio(self, client):
-        with patch("app.main.query_with_metadata", return_value=MOCK_RESULTS["sin_informacion"]):
+        with patch("app.main.query_with_fallback", return_value=MOCK_RESULTS["sin_informacion"]):
             resp = client.post("/query", json={"pregunta": "¿Cuántos goles marcó Messi?"})
         assert resp.status_code == 200
         assert resp.json()["categoria"] == "sin_informacion"
@@ -174,7 +174,7 @@ class TestLatencia:
 
     def test_latencia_query_mock(self, client):
         """El endpoint /query con mock debe responder en < 100 ms."""
-        with patch("app.main.query_with_metadata", return_value=MOCK_RESULTS["accesos"]):
+        with patch("app.main.query_with_fallback", return_value=MOCK_RESULTS["accesos"]):
             tiempos = []
             for _ in range(self.N):
                 t0 = time.perf_counter()

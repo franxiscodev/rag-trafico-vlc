@@ -11,6 +11,7 @@ Sistema RAG End-to-End para consultar el estado del tráfico de Valencia en tiem
 | Vector DB | Qdrant en Docker (REST: 6333, gRPC: 6334) |
 | Embedding | gemini-embedding-001 — 3072 dims, distancia Coseno |
 | LLM | gemini-2.5-flash-lite — temperatura 0 (llama-index-llms-google-genai) |
+| LLM Fallback | OpenRouter → google/gemma-3-27b-it:free (llama-index-llms-openai-like) |
 | Backend | FastAPI con lifespan async |
 | OS | Windows 11 |
 | Editor | VS Code |
