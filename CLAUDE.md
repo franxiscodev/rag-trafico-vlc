@@ -124,7 +124,7 @@ El proyecto sigue un plan de 6 fases documentado en `plan/PLAN_RAG_Valencia.md`.
 
 ## 🔑 Variables de Entorno (.env)
 ```
-GEMINI_API_KEY=
+GOOGLE_API_KEY=          # detectada automáticamente por GeminiEmbedding y Gemini LLM
 QDRANT_HOST=localhost
 QDRANT_PORT_REST=6333
 QDRANT_PORT_GRPC=6334

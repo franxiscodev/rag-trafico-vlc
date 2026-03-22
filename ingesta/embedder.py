@@ -5,7 +5,6 @@ Estrategia: borrado + recreación completa de la colección en cada ciclo.
 Embedding: Gemini Embedding 001 (3072 dims) vía LlamaIndex.
 Reintentos: tenacity para gestionar errores 429 de la API Gemini.
 """
-import os
 import logging
 from dotenv import load_dotenv
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
@@ -28,7 +27,7 @@ from qdrant_client.models import Distance, VectorParams, HnswConfigDiff
 load_dotenv()
 log = logging.getLogger(__name__)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# GeminiEmbedding detecta GOOGLE_API_KEY automáticamente vía os.getenv
 EMBED_MODEL = "models/embedding-001"
 HNSW_M = 16
 
@@ -82,11 +81,8 @@ def run_ingesta() -> int:
     """
     log.info("Iniciando ciclo de ingesta...")
 
-    # 1. Configurar embedding
-    embed_model = GeminiEmbedding(
-        model_name=EMBED_MODEL,
-        api_key=GEMINI_API_KEY,
-    )
+    # 1. Configurar embedding (GOOGLE_API_KEY se detecta automáticamente del entorno)
+    embed_model = GeminiEmbedding(model_name=EMBED_MODEL)
     Settings.embed_model = embed_model
 
     # 2. Descargar datos
