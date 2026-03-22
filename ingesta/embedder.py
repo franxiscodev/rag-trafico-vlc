@@ -4,6 +4,8 @@ Pipeline de ingesta: descarga → categoriza → embedd → indexa en Qdrant.
 Estrategia: borrado + recreación completa de la colección en cada ciclo.
 Embedding: gemini-embedding-001 (3072 dims) vía llama-index-embeddings-google-genai.
 Reintentos 429: gestionados internamente por GoogleGenAIEmbedding (retries + backoff).
+Preflight check: antes de borrar Qdrant se embedd 1 doc de prueba; si hay 429
+  se aborta la ingesta conservando la colección intacta.
 """
 import logging
 from collections import Counter
@@ -51,6 +53,26 @@ def _build_documents(records: list[dict]) -> list[Document]:
     return docs
 
 
+def _preflight_embedding_check(embed_model: GoogleGenAIEmbedding) -> None:
+    """
+    Embedd un texto mínimo para verificar que la API de Gemini acepta peticiones.
+    Lanza google.api_core.exceptions.ResourceExhausted si hay 429,
+    lo que aborta la ingesta antes de tocar Qdrant.
+    """
+    from google.api_core.exceptions import ResourceExhausted
+    log.info("Preflight check: probando disponibilidad de la API de embedding...")
+    try:
+        embed_model.get_text_embedding("test")
+        log.info("Preflight OK — API de embedding disponible.")
+    except ResourceExhausted as exc:
+        log.error(
+            "Preflight FALLIDO: 429 ResourceExhausted. "
+            "Ingesta abortada — Qdrant conserva los datos anteriores. Error: %s",
+            exc,
+        )
+        raise
+
+
 def _drop_and_recreate(client) -> None:
     """Borra la colección existente y la recrea vacía."""
     existing = {c.name for c in client.get_collections().collections}
@@ -95,11 +117,14 @@ def run_ingesta() -> int:
     conteo = Counter(d.metadata["source"] for d in docs)
     log.info("Categorias: %s", dict(conteo))
 
-    # 4. Borrar + recrear colección (una sola vez por ciclo)
+    # 4. Preflight: verificar API antes de borrar Qdrant
+    _preflight_embedding_check(embed_model)
+
+    # 5. Borrar + recrear colección (una sola vez por ciclo)
     client = get_qdrant_client()
     _drop_and_recreate(client)
 
-    # 5. Indexar en Qdrant (los 429 se reintentan a nivel de batch)
+    # 6. Indexar en Qdrant (los 429 se reintentan a nivel de batch)
     storage_context = get_storage_context(client)
     VectorStoreIndex.from_documents(
         docs,
