@@ -9,7 +9,6 @@ dependencies = [
     "llama-index",
     "llama-index-vector-stores-qdrant",
     "llama-index-llms-gemini",
-    "llama-index-embeddings-gemini",
     "qdrant-client",
     "google-generativeai",
     "tenacity",
@@ -17,4 +16,5 @@ dependencies = [
     "httpx",
     "python-dotenv",
     "pydantic",
+    "llama-index-embeddings-google-genai>=0.5.0",
 ]

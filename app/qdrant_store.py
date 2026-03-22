@@ -17,7 +17,7 @@ PORT_REST = int(os.getenv("QDRANT_PORT_REST", 6333))
 PORT_GRPC = int(os.getenv("QDRANT_PORT_GRPC", 6334))
 COLLECTION = os.getenv("QDRANT_COLLECTION", "trafico_valencia")
 
-VECTOR_SIZE = 3072   # Gemini Embedding 001
+VECTOR_SIZE = 3072   # gemini-embedding-001
 HNSW_M = 16
 
 

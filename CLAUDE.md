@@ -9,7 +9,7 @@ Sistema RAG End-to-End para consultar el estado del tráfico de Valencia en tiem
 | Lenguaje | Python (UV para gestión de entorno) |
 | Framework RAG | LlamaIndex (RouterQueryEngine + StorageContext) |
 | Vector DB | Qdrant en Docker (REST: 6333, gRPC: 6334) |
-| Embedding | Gemini Embedding 001 — 3072 dims, distancia Coseno |
+| Embedding | gemini-embedding-001 — 3072 dims, distancia Coseno |
 | LLM | Gemini 1.5 Flash — temperatura 0 |
 | Backend | FastAPI con lifespan async |
 | OS | Windows 11 |
@@ -105,7 +105,7 @@ dependencies = [
     "llama-index",
     "llama-index-vector-stores-qdrant",
     "llama-index-llms-gemini",
-    "llama-index-embeddings-gemini",
+    "llama-index-embeddings-google-genai",
     "qdrant-client",
     "google-generativeai",
     "tenacity",

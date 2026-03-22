@@ -2,33 +2,30 @@
 Pipeline de ingesta: descarga → categoriza → embedd → indexa en Qdrant.
 
 Estrategia: borrado + recreación completa de la colección en cada ciclo.
-Embedding: Gemini Embedding 001 (3072 dims) vía LlamaIndex.
-Reintentos: tenacity para gestionar errores 429 de la API Gemini.
+Embedding: gemini-embedding-001 (3072 dims) vía llama-index-embeddings-google-genai.
+Reintentos 429: gestionados internamente por GoogleGenAIEmbedding (retries + backoff).
 """
 import logging
+from collections import Counter
 from dotenv import load_dotenv
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
-from llama_index.core import Document
-from llama_index.embeddings.gemini import GeminiEmbedding
-from llama_index.core import Settings, VectorStoreIndex
+from llama_index.core import Document, Settings, VectorStoreIndex
+from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+from qdrant_client.models import Distance, VectorParams, HnswConfigDiff
 
 from ingesta.api_client import fetch_all_records
 from ingesta.categorizer import categorize, build_document_text
 from app.qdrant_store import (
     get_qdrant_client,
-    ensure_collection,
     get_storage_context,
     COLLECTION,
     VECTOR_SIZE,
 )
-from qdrant_client.models import Distance, VectorParams, HnswConfigDiff
 
 load_dotenv()
 log = logging.getLogger(__name__)
 
-# GeminiEmbedding detecta GOOGLE_API_KEY automáticamente vía os.getenv
-EMBED_MODEL = "models/embedding-001"
+EMBED_MODEL = "gemini-embedding-001"
 HNSW_M = 16
 
 
@@ -68,21 +65,25 @@ def _drop_and_recreate(client) -> None:
     log.info("Coleccion '%s' recreada.", COLLECTION)
 
 
-@retry(
-    retry=retry_if_exception_type(Exception),
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(5),
-    reraise=True,
-)
 def run_ingesta() -> int:
     """
     Ejecuta el ciclo completo de ingesta.
     Devuelve el número de documentos indexados.
+
+    Los reintentos por 429 los gestiona GoogleGenAIEmbedding internamente
+    (retries=10, backoff exponencial hasta 60 s). No se usa tenacity aquí
+    para evitar que un 429 reinicie todo el pipeline (borrado + descarga).
     """
     log.info("Iniciando ciclo de ingesta...")
 
-    # 1. Configurar embedding (GOOGLE_API_KEY se detecta automáticamente del entorno)
-    embed_model = GeminiEmbedding(model_name=EMBED_MODEL)
+    # 1. Configurar embedding con reintentos generosos para gestionar 429
+    #    GOOGLE_API_KEY se detecta automáticamente del entorno
+    embed_model = GoogleGenAIEmbedding(
+        model_name=EMBED_MODEL,
+        retries=10,
+        retry_min_seconds=5,
+        retry_max_seconds=60,
+    )
     Settings.embed_model = embed_model
 
     # 2. Descargar datos
@@ -91,17 +92,14 @@ def run_ingesta() -> int:
 
     # 3. Construir documentos
     docs = _build_documents(records)
-
-    # Resumen de categorías
-    from collections import Counter
     conteo = Counter(d.metadata["source"] for d in docs)
     log.info("Categorias: %s", dict(conteo))
 
-    # 4. Borrar + recrear colección
+    # 4. Borrar + recrear colección (una sola vez por ciclo)
     client = get_qdrant_client()
     _drop_and_recreate(client)
 
-    # 5. Indexar en Qdrant
+    # 5. Indexar en Qdrant (los 429 se reintentan a nivel de batch)
     storage_context = get_storage_context(client)
     VectorStoreIndex.from_documents(
         docs,
