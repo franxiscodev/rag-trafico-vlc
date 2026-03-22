@@ -59,18 +59,9 @@ def _preflight_embedding_check(embed_model: GoogleGenAIEmbedding) -> None:
     Lanza google.api_core.exceptions.ResourceExhausted si hay 429,
     lo que aborta la ingesta antes de tocar Qdrant.
     """
-    from google.api_core.exceptions import ResourceExhausted
     log.info("Preflight check: probando disponibilidad de la API de embedding...")
-    try:
-        embed_model.get_text_embedding("test")
-        log.info("Preflight OK — API de embedding disponible.")
-    except ResourceExhausted as exc:
-        log.error(
-            "Preflight FALLIDO: 429 ResourceExhausted. "
-            "Ingesta abortada — Qdrant conserva los datos anteriores. Error: %s",
-            exc,
-        )
-        raise
+    embed_model.get_text_embedding("test")
+    log.info("Preflight OK — API de embedding disponible.")
 
 
 def _drop_and_recreate(client) -> None:
@@ -118,14 +109,26 @@ def run_ingesta() -> int:
     log.info("Categorias: %s", dict(conteo))
 
     # 4. Preflight: verificar API antes de borrar Qdrant
-    _preflight_embedding_check(embed_model)
+    client = get_qdrant_client()
+    try:
+        existing_points = client.get_collection(COLLECTION).points_count or 0
+    except Exception:
+        existing_points = 0  # colección aún no existe (primera ejecución)
+
+    try:
+        _preflight_embedding_check(embed_model)
+    except Exception as exc:
+        log.info(
+            "Preflight 429 detectado. Qdrant conserva %d puntos existentes. Ingesta abortada.",
+            existing_points,
+        )
+        raise
 
     # 5. Borrar + recrear colección (una sola vez por ciclo)
-    client = get_qdrant_client()
     _drop_and_recreate(client)
 
     # 6. Indexar en Qdrant (los 429 se reintentan a nivel de batch)
-    storage_context = get_storage_context(client)
+    storage_context = get_storage_context(client)  # reutiliza el cliente ya creado
     VectorStoreIndex.from_documents(
         docs,
         storage_context=storage_context,
