@@ -76,7 +76,7 @@ def mock_app_state():
 @pytest.fixture
 def client():
     """TestClient con lifespan desactivado (lo gestionamos con mock_app_state)."""
-    with patch("app.main.get_qdrant_client", return_value=_make_mock_qdrant_client()), \
+    with patch("app.main.get_qdrant_clients", return_value=(_make_mock_qdrant_client(), MagicMock())), \
          patch("app.main.get_index", return_value=MagicMock()), \
          patch("app.main.build_router", return_value=MagicMock()), \
          patch("app.main.start_background_scheduler", return_value=MagicMock()):
