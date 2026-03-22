@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from app.models import QueryRequest, QueryResponse, HealthResponse, IngestResponse
 from app.qdrant_store import get_qdrant_client, COLLECTION
-from app.router_rag import get_index, build_router, query_with_metadata
+from app.router_rag import get_index, build_router, query_with_fallback
 from ingesta.embedder import run_ingesta
 from ingesta.scheduler import start_background_scheduler
 
@@ -86,7 +86,7 @@ async def query(request: QueryRequest):
         raise HTTPException(status_code=503, detail="Router no inicializado.")
 
     try:
-        result = query_with_metadata(router, request.pregunta)
+        result = query_with_fallback(router, _state["index"], request.pregunta)
         return QueryResponse(
             respuesta=result.response,
             categoria=result.categoria,
