@@ -7,8 +7,8 @@ Arquitectura:
 - Fallback explícito para queries fuera del dominio de tráfico
 - Async obligatorio: usar aquery() desde FastAPI
 """
-import os
 import logging
+from dataclasses import dataclass
 from dotenv import load_dotenv
 
 from llama_index.core import VectorStoreIndex, Settings
@@ -140,6 +140,33 @@ def build_router(index: VectorStoreIndex) -> RouterQueryEngine:
 
     log.info("RouterQueryEngine construido con %d herramientas.", len(tools))
     return router
+
+
+@dataclass
+class RouterResult:
+    response: str
+    categoria: str
+    reason: str
+
+
+def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResult:
+    """
+    Ejecuta una consulta contra el router y devuelve respuesta + categoría + reason.
+    Llama al selector directamente para capturar la selección antes de ejecutar el engine.
+    """
+    from llama_index.core.schema import QueryBundle
+
+    query_bundle = QueryBundle(query_str)
+    selection = router._selector.select(router._metadatas, query_bundle)
+    engine = router._query_engines[selection.ind]
+    categoria = router._metadatas[selection.ind].name
+    response = engine.query(query_str)
+
+    return RouterResult(
+        response=str(response),
+        categoria=categoria,
+        reason=selection.reason,
+    )
 
 
 def get_index() -> VectorStoreIndex:
