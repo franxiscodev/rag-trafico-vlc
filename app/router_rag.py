@@ -8,6 +8,7 @@ Arquitectura:
 - Async obligatorio: usar aquery() desde FastAPI
 """
 import logging
+import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -30,6 +31,8 @@ log = logging.getLogger(__name__)
 
 LLM_MODEL = "gemini-2.5-flash-lite"
 EMBED_MODEL = "gemini-embedding-001"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_MODEL = "google/gemma-3-27b-it:free"
 
 # Descripciones semánticas para el selector — son el "prompt" de routing
 _TOOL_DESCRIPTIONS = {
@@ -64,8 +67,38 @@ _FALLBACK_DESCRIPTION = (
 )
 
 
+def get_llm():
+    """
+    Devuelve el LLM activo: Gemini si GOOGLE_API_KEY está disponible,
+    OpenRouter (gemma-3-27b-it:free) como fallback si OPENROUTER_API_KEY está presente.
+    """
+    google_key = os.getenv("GOOGLE_API_KEY", "")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+
+    if google_key:
+        log.info("LLM: usando Gemini (%s).", LLM_MODEL)
+        return GoogleGenAI(model=LLM_MODEL, temperature=0)
+
+    if openrouter_key:
+        from llama_index.llms.openai_like import OpenAILike
+        log.info("LLM: Gemini no disponible — usando OpenRouter (%s).", OPENROUTER_MODEL)
+        return OpenAILike(
+            model=OPENROUTER_MODEL,
+            api_base=OPENROUTER_BASE_URL,
+            api_key=openrouter_key,
+            temperature=0,
+            is_chat_model=True,
+        )
+
+    raise RuntimeError(
+        "No se encontró ninguna clave de LLM. "
+        "Define GOOGLE_API_KEY o OPENROUTER_API_KEY en el fichero .env."
+    )
+
+
 def _get_llm() -> GoogleGenAI:
-    return GoogleGenAI(model=LLM_MODEL, temperature=0)
+    """Alias interno para compatibilidad con get_index()."""
+    return get_llm()
 
 
 def _get_embed_model() -> GoogleGenAIEmbedding:
