@@ -128,15 +128,26 @@ def run_ingesta() -> int:
     _drop_and_recreate(client)
 
     # 6. Indexar en Qdrant (los 429 se reintentan a nivel de batch)
-    storage_context = get_storage_context(client)  # reutiliza el cliente ya creado
+    #    StorageContext se construye DESPUÉS de _drop_and_recreate() con el mismo
+    #    cliente para garantizar que apunta a la colección recién creada.
+    storage_context = get_storage_context(client)
     VectorStoreIndex.from_documents(
         docs,
         storage_context=storage_context,
         show_progress=True,
     )
 
-    log.info("Ingesta completada: %d documentos indexados.", len(docs))
-    return len(docs)
+    # 7. Verificar contra Qdrant directamente — no confiar en el contador de LlamaIndex
+    real_count = client.count(COLLECTION).count
+    log.info(
+        "Verificacion Qdrant: %d puntos reales en '%s' (LlamaIndex reporto %d documentos).",
+        real_count,
+        COLLECTION,
+        len(docs),
+    )
+
+    log.info("Ingesta completada: %d documentos indexados.", real_count)
+    return real_count
 
 
 if __name__ == "__main__":
