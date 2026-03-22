@@ -1,0 +1,35 @@
+# Variables de entorno — NUNCA subir al repo
+.env
+
+# Entorno virtual UV
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Planificación (docs internos, no parte del repo)
+plan/
+
+# Claude Code
+.claude/
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistemas operativos
+.DS_Store
+Thumbs.db
+
+# UV
+uv.lock

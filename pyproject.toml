@@ -1,0 +1,20 @@
+[project]
+name = "rag-trafico-vlc"
+version = "0.1.0"
+description = "Sistema RAG para consultar el estado del tráfico de Valencia en tiempo real"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "llama-index",
+    "llama-index-vector-stores-qdrant",
+    "llama-index-llms-gemini",
+    "llama-index-embeddings-gemini",
+    "qdrant-client",
+    "google-generativeai",
+    "tenacity",
+    "apscheduler",
+    "httpx",
+    "python-dotenv",
+    "pydantic",
+]
