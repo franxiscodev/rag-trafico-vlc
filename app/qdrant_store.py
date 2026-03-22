@@ -5,7 +5,7 @@ Configura el StorageContext de LlamaIndex sobre Qdrant.
 """
 import os
 from dotenv import load_dotenv
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, HnswConfigDiff
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.core import StorageContext, VectorStoreIndex
@@ -22,12 +22,19 @@ HNSW_M = 16
 
 
 def get_qdrant_client() -> QdrantClient:
-    """Devuelve un cliente Qdrant con gRPC como protocolo preferido."""
+    """Devuelve un cliente Qdrant sync via REST (usado por ingesta)."""
     return QdrantClient(
         host=HOST,
-        grpc_port=PORT_GRPC,
-        prefer_grpc=True,
+        port=PORT_REST,
+        prefer_grpc=False,
     )
+
+
+def get_qdrant_clients() -> tuple[QdrantClient, AsyncQdrantClient]:
+    """Devuelve cliente sync y async para Qdrant (usado por FastAPI)."""
+    client = QdrantClient(host=HOST, port=PORT_REST, prefer_grpc=False)
+    aclient = AsyncQdrantClient(host=HOST, port=PORT_REST)
+    return client, aclient
 
 
 def ensure_collection(client: QdrantClient) -> None:
@@ -47,11 +54,12 @@ def ensure_collection(client: QdrantClient) -> None:
         print(f"[qdrant_store] Colección '{COLLECTION}' ya existe.")
 
 
-def get_vector_store(client: QdrantClient) -> QdrantVectorStore:
+def get_vector_store(client: QdrantClient, aclient: AsyncQdrantClient = None) -> QdrantVectorStore:
     """Devuelve el QdrantVectorStore de LlamaIndex."""
     return QdrantVectorStore(
         collection_name=COLLECTION,
         client=client,
+        aclient=aclient,
     )
 
 
@@ -61,9 +69,9 @@ def get_storage_context(client: QdrantClient) -> StorageContext:
     return StorageContext.from_defaults(vector_store=vector_store)
 
 
-def get_index(client: QdrantClient) -> VectorStoreIndex:
+def get_index(client: QdrantClient, aclient: AsyncQdrantClient = None) -> VectorStoreIndex:
     """Devuelve un VectorStoreIndex sobre la colección existente (sin reindexar)."""
-    vector_store = get_vector_store(client)
+    vector_store = get_vector_store(client, aclient)
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     return VectorStoreIndex.from_vector_store(
         vector_store=vector_store,

@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.models import QueryRequest, QueryResponse, HealthResponse, IngestResponse
-from app.qdrant_store import get_qdrant_client, COLLECTION
+from app.qdrant_store import get_qdrant_clients, COLLECTION
 from app.router_rag import get_index, build_router, query_with_fallback
 from ingesta.embedder import run_ingesta
 from ingesta.scheduler import start_background_scheduler
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     log.info("Arrancando RAG Tráfico Valencia...")
 
     # Conectar Qdrant y cargar índice
-    _state["qdrant_client"] = get_qdrant_client()
+    _state["qdrant_client"], _ = get_qdrant_clients()
     _state["index"] = get_index()
     _state["router"] = build_router(_state["index"])
 
@@ -86,7 +86,7 @@ async def query(request: QueryRequest):
         raise HTTPException(status_code=503, detail="Router no inicializado.")
 
     try:
-        result = query_with_fallback(router, _state["index"], request.pregunta)
+        result = await query_with_fallback(router, _state["index"], request.pregunta)
         return QueryResponse(
             respuesta=result.response,
             categoria=result.categoria,

@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 LLM_MODEL = "gemini-2.5-flash-lite"
 EMBED_MODEL = "gemini-embedding-001"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_MODEL = "google/gemma-3-27b-it:free"
+OPENROUTER_MODEL = "meta-llama/llama-3.2-3b-instruct:free"
 
 # Descripciones semánticas para el selector — son el "prompt" de routing
 _TOOL_DESCRIPTIONS = {
@@ -89,8 +89,11 @@ def _get_openrouter_llm():
     )
 
 
-def _get_llm() -> GoogleGenAI:
-    """Alias interno para compatibilidad con get_index()."""
+def _get_llm():
+    """Devuelve OpenRouter si FORCE_OPENROUTER=true, Gemini en caso contrario."""
+    if os.getenv("FORCE_OPENROUTER", "").lower() == "true":
+        log.info("FORCE_OPENROUTER=true — usando OpenRouter como LLM primario.")
+        return _get_openrouter_llm()
     return get_llm()
 
 
@@ -137,8 +140,8 @@ def _make_fallback_engine(llm: GoogleGenAI):
 def build_router(index: VectorStoreIndex, llm=None) -> RouterQueryEngine:
     """
     Construye el RouterQueryEngine con las 4 herramientas + fallback.
-    El selector PydanticSingleSelector devuelve el campo 'reason' obligatorio
-    para trazabilidad.
+    Selector: PydanticSingleSelector (Gemini, function calling) o
+              LLMSingleSelector (OpenRouter/Gemma, prompt-based, sin function calling).
     Acepta un llm opcional para poder reconstruir el router con OpenRouter en el fallback.
     """
     if llm is None:
@@ -160,8 +163,14 @@ def build_router(index: VectorStoreIndex, llm=None) -> RouterQueryEngine:
     )
     tools.append(fallback_tool)
 
+    if os.getenv("FORCE_OPENROUTER", "").lower() == "true":
+        from llama_index.core.selectors import LLMSingleSelector
+        selector = LLMSingleSelector.from_defaults(llm=llm)
+    else:
+        selector = PydanticSingleSelector.from_defaults(llm=llm)
+
     router = RouterQueryEngine(
-        selector=PydanticSingleSelector.from_defaults(llm=llm),
+        selector=selector,
         query_engine_tools=tools,
         verbose=True,
     )
@@ -177,7 +186,7 @@ class RouterResult:
     reason: str
 
 
-def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResult:
+async def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResult:
     """
     Ejecuta una consulta contra el router y devuelve respuesta + categoría + reason.
     Llama al selector directamente para capturar la selección antes de ejecutar el engine.
@@ -185,10 +194,10 @@ def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResu
     from llama_index.core.schema import QueryBundle
 
     query_bundle = QueryBundle(query_str)
-    selection = router._selector.select(router._metadatas, query_bundle)
+    selection = await router._selector.aselect(router._metadatas, query_bundle)
     engine = router._query_engines[selection.ind]
     categoria = router._metadatas[selection.ind].name
-    response = engine.query(query_str)
+    response = await engine.aquery(query_str)
 
     return RouterResult(
         response=str(response),
@@ -197,7 +206,7 @@ def query_with_metadata(router: RouterQueryEngine, query_str: str) -> RouterResu
     )
 
 
-def query_with_fallback(
+async def query_with_fallback(
     router: RouterQueryEngine,
     index: VectorStoreIndex,
     query_str: str,
@@ -228,17 +237,17 @@ def query_with_fallback(
         before_sleep=_activate_openrouter,
         reraise=True,
     )
-    def _attempt() -> RouterResult:
-        return query_with_metadata(active_router[0], query_str)
+    async def _attempt() -> RouterResult:
+        return await query_with_metadata(active_router[0], query_str)
 
-    return _attempt()
+    return await _attempt()
 
 
 def get_index() -> VectorStoreIndex:
     """Carga el índice existente en Qdrant sin re-indexar."""
-    from app.qdrant_store import get_index as _get_index
+    from app.qdrant_store import get_qdrant_clients, get_index as _get_index
     # Configurar embed_model antes de construir el índice
     Settings.embed_model = _get_embed_model()
     Settings.llm = _get_llm()
-    client = get_qdrant_client()
-    return _get_index(client)
+    client, aclient = get_qdrant_clients()
+    return _get_index(client, aclient)
